@@ -1,5 +1,6 @@
 com\stock\StockPriceUpdater.class
 com\stock\StockServer$1.class
+com\stock\DataBaseManager.class
 com\stock\StockLogger.class
 com\stock\StockServer$StockDTO.class
 com\stock\Stock.class

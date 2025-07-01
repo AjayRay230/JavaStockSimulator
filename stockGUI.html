@@ -2,43 +2,195 @@
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>Live Stock Prices</title>
+  <title>Live Stock Prices with Graphs</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    .stock {
-      margin: 10px 0;
-      font-size: 18px;
-    }
     body {
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: Arial, sans-serif;
       padding: 20px;
+    }
+
+    #search-box {
+      padding: 8px;
+      width: 300px;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stock-container {
+      margin-bottom: 50px;
+    }
+
+    canvas {
+      max-width: 500px;
+      height: 250px;
+    }
+
+    .stock-title {
+      font-weight: bold;
+      font-size: 18px;
+      margin-bottom: 5px;
+    }
+
+    .chart-controls {
+      margin-bottom: 10px;
+    }
+
+    button {
+      padding: 4px 10px;
+      margin-left: 10px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <h1>Live Stock Prices</h1>
+
+  <h1>Live Stock Prices with Graphs</h1>
+
+  <input type="text" id="search-box" placeholder="Search stock by name..." />
+
   <div id="stock-container"></div>
 
-
   <script>
+    let allStocks = [];
+    const historyMap = {};    // { stockName: [ {price, time} ] }
+    const chartMap = {};      // { stockName: ChartInstance }
+    const chartTypeMap = {};  // { stockName: "line" | "bar" }
+
     async function fetchStocks() {
       try {
         const res = await fetch('http://localhost:8181/stocks');
         const stocks = await res.json();
-        const container = document.getElementById('stock-container');
-        container.innerHTML = '';
-        stocks.forEach(stock => {
-          const div = document.createElement('div');
-          div.className = 'stock';
-          div.textContent = `${stock.name}: $${stock.price.toFixed(2)}`;
-          container.appendChild(div);
-        });
+        allStocks = stocks;
+        applySearchFilter();
       } catch (err) {
         console.error('Failed to fetch stock data:', err);
       }
     }
 
+    function renderStocks(stocks) {
+      const container = document.getElementById('stock-container');
+
+      stocks.forEach(stock => {
+        const name = stock.name || stock.symbol || "Unknown";
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+
+        // Initialize history
+        if (!historyMap[name]) {
+          historyMap[name] = [];
+        }
+
+        // Add current data point
+        historyMap[name].push({ price: stock.price, time: timeStr });
+        if (historyMap[name].length > 30) {
+          historyMap[name].shift();
+        }
+
+        const dataPoints = historyMap[name];
+        const prices = dataPoints.map(d => d.price);
+        const labels = dataPoints.map(d => d.time);
+
+        // Determine chart type and color
+        const chartType = chartTypeMap[name] || 'line';
+        const latest = prices[prices.length - 1];
+        const prev = prices.length > 1 ? prices[prices.length - 2] : latest;
+        const isRising = latest >= prev;
+        const color = isRising ? 'green' : 'red';
+
+        // If container doesn't exist, create it
+        let stockDiv = document.getElementById(`stock-${name}`);
+        if (!stockDiv) {
+          stockDiv = document.createElement('div');
+          stockDiv.className = 'stock-container';
+          stockDiv.id = `stock-${name}`;
+
+          const title = document.createElement('div');
+          title.className = 'stock-title';
+          title.id = `title-${name}`;
+
+          const controls = document.createElement('div');
+          controls.className = 'chart-controls';
+
+          const toggleBtn = document.createElement('button');
+          toggleBtn.id = `toggle-${name}`;
+          toggleBtn.onclick = () => {
+            chartTypeMap[name] = chartType === 'line' ? 'bar' : 'line';
+            renderStocks([stock]); // Re-render this stock only
+          };
+
+          controls.appendChild(toggleBtn);
+
+          const canvas = document.createElement('canvas');
+          canvas.id = `chart-${name}`;
+
+          stockDiv.appendChild(title);
+          stockDiv.appendChild(controls);
+          stockDiv.appendChild(canvas);
+          container.appendChild(stockDiv);
+        }
+
+        // Update DOM content
+        document.getElementById(`title-${name}`).textContent = `${name}: $${latest.toFixed(2)} (${timeStr})`;
+        document.getElementById(`toggle-${name}`).textContent = chartType === 'line' ? 'Switch to Bar' : 'Switch to Line';
+
+        // Update or create chart
+        const canvas = document.getElementById(`chart-${name}`);
+        if (chartMap[name]) {
+          const chart = chartMap[name];
+          chart.data.labels = labels;
+          chart.data.datasets[0].data = prices;
+          chart.data.datasets[0].borderColor = color;
+          chart.data.datasets[0].backgroundColor = color === 'green' ? 'rgba(0,255,0,0.2)' : 'rgba(255,0,0,0.2)';
+          chart.config.type = chartType;
+          chart.update();
+        } else {
+          chartMap[name] = new Chart(canvas.getContext('2d'), {
+            type: chartType,
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Price',
+                data: prices,
+                borderColor: color,
+                backgroundColor: color === 'green' ? 'rgba(0,255,0,0.2)' : 'rgba(255,0,0,0.2)',
+                tension: 0.4,
+                fill: true
+              }]
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              scales: {
+                x: {
+                  title: { display: true, text: 'Time' }
+                },
+                y: {
+                  beginAtZero: false,
+                  title: { display: true, text: 'Price' }
+                }
+              },
+              plugins: {
+                legend: { display: false }
+              }
+            }
+          });
+        }
+      });
+    }
+
+    function applySearchFilter() {
+      const query = document.getElementById('search-box').value.trim().toLowerCase();
+      const filtered = allStocks.filter(stock =>
+        (stock.name || stock.symbol || "").toLowerCase().includes(query)
+      );
+      renderStocks(filtered);
+    }
+
+    document.getElementById('search-box').addEventListener('input', applySearchFilter);
+
     fetchStocks();
-    setInterval(fetchStocks, 1000); // update every second
+    setInterval(fetchStocks, 1000);
   </script>
 </body>
 </html>

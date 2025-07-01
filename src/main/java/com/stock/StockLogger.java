@@ -7,10 +7,12 @@ import java.time.LocalDateTime;
 public class StockLogger {
 
     private final FileWriter writer;
-
+    private final DataBaseManager dbManager;
     public StockLogger(String filename) throws IOException{
 
         writer  = new FileWriter(filename,true);
+        dbManager = new DataBaseManager();
+
     }
     public synchronized void log(String stockName,double price)
     {
@@ -22,6 +24,8 @@ public class StockLogger {
             writer.write(log);
 
             writer.flush();
+            dbManager.insertLog(stockName, price);
+
         }
         catch(IOException e)
         {
